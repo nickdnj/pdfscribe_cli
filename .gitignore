@@ -1,0 +1,36 @@
+# Output directories
+*_output/
+*_outputs/
+output_docs/
+website*/
+
+# Data directories (test/example files)
+ExecMinute*/
+ExecMinutes/
+Financials/
+GovDocs/
+Minutes/
+NewScanJune24*/
+Wharfside*/
+source_doc/
+images/
+
+# Generated files
+*.html
+*.zip
+
+# OS files
+.DS_Store
+__pycache__/
+*.pyc
+
+# Environment
+.env
+*.env
+
+# IDE
+.vscode/
+.idea/
+
+# Temp files
+/tmp/

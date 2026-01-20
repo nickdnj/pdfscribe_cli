@@ -1,0 +1,12 @@
+# PDFScribe CLI dependencies
+
+# Core dependencies
+pdf2image>=1.16.0
+python-dotenv>=1.0.0
+requests>=2.28.0
+tqdm>=4.64.0
+
+# Google Drive integration
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.0.0
+google-auth>=2.15.0
