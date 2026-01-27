@@ -10,3 +10,7 @@ tqdm>=4.64.0
 google-api-python-client>=2.100.0
 google-auth-oauthlib>=1.0.0
 google-auth>=2.15.0
+
+# RAG support (optional - install with: pip install pdfscribe[rag])
+psycopg2-binary>=2.9.0
+# openai>=1.0.0  # Only needed for embeddings

@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-PDFScribe CLI - PDF transcription using Claude's vision capabilities
-Converts scanned PDFs to text using Anthropic's Claude API
+PDFScribe CLI - PDF transcription using vision AI capabilities
+Converts scanned PDFs to text using Anthropic's Claude API or OpenAI's GPT-4 Vision
 
 Features:
 - Multi-page PDF transcription
 - Caching of transcriptions next to source documents
 - Checksum-based cache validation
 - Google Drive integration (download source, upload transcription)
+- Support for multiple AI providers (Anthropic, OpenAI)
 """
 import argparse
 import os
@@ -26,32 +27,55 @@ from tqdm import tqdm
 # Load environment variables from .env (if present)
 load_dotenv()
 
-# Retrieve your API key from the environment
-API_KEY = os.getenv("ANTHROPIC_API_KEY")
-if not API_KEY:
+# AI Provider configuration
+AI_PROVIDER = os.getenv("AI_PROVIDER", "anthropic").lower()  # 'anthropic' or 'openai'
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# Validate API keys based on provider
+if AI_PROVIDER == "anthropic" and not ANTHROPIC_API_KEY:
     logging.warning("ANTHROPIC_API_KEY is not set. Please set it in your environment or .env file.")
+elif AI_PROVIDER == "openai" and not OPENAI_API_KEY:
+    logging.warning("OPENAI_API_KEY is not set. Please set it in your environment or .env file.")
 
 # Google Drive credentials path
 GDRIVE_CREDENTIALS_PATH = os.path.expanduser("~/.config/mcp-gdrive/.gdrive-server-credentials.json")
 GDRIVE_OAUTH_PATH = os.path.expanduser("~/.config/mcp-gdrive/gcp-oauth.keys.json")
 
 # Global parameters used in the prompt and API call
+PROMPT_TEXT = (
+    "You are a skilled transcriber specializing in extracting text from poor-quality scanned document pages. "
+    "Your task is to accurately transcribe all visible text and handle any handwritten annotations such as dates, "
+    "checkmarks, or initials with special attention:\n"
+    "Annotations: Enclose handwritten annotations in curly brackets. For example, for handwritten initials, transcribe them as {initials}.\n"
+    "Uncertain Text: If you encounter any text that you are unsure about, highlight it in red to indicate uncertainty.\n"
+    "Formatting:\n"
+    "Tables: Use simple HTML tags to represent tables.\n"
+    "Bold Text: Use HTML tags to bold any text that appears bold in the original document.\n"
+    "Notes: Focus solely on transcription without adding any notes or commentary."
+)
+
+# Provider-specific parameters
 PARAMETERS = {
-    "prompt_text": (
-        "You are a skilled transcriber specializing in extracting text from poor-quality scanned document pages. "
-        "Your task is to accurately transcribe all visible text and handle any handwritten annotations such as dates, "
-        "checkmarks, or initials with special attention:\n"
-        "Annotations: Enclose handwritten annotations in curly brackets. For example, for handwritten initials, transcribe them as {initials}.\n"
-        "Uncertain Text: If you encounter any text that you are unsure about, highlight it in red to indicate uncertainty.\n"
-        "Formatting:\n"
-        "Tables: Use simple HTML tags to represent tables.\n"
-        "Bold Text: Use HTML tags to bold any text that appears bold in the original document.\n"
-        "Notes: Focus solely on transcription without adding any notes or commentary."
-    ),
-    "model": "claude-sonnet-4-20250514",
-    "max_tokens": 4096,
-    "temperature": 0.7
+    "anthropic": {
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 4096,
+        "temperature": 0.7
+    },
+    "openai": {
+        "model": "gpt-4o",  # gpt-4o has excellent vision capabilities
+        "max_tokens": 4096,
+        "temperature": 0.7
+    }
 }
+
+def get_current_provider():
+    """Get the current AI provider setting."""
+    return AI_PROVIDER
+
+def get_current_model():
+    """Get the model for the current provider."""
+    return PARAMETERS[AI_PROVIDER]["model"]
 
 # ============================================================================
 # Google Drive Functions
@@ -303,24 +327,22 @@ def encode_image(image):
     return encoded_image
 
 
-def image_to_text(base64_image, page_number, backstory):
+def image_to_text_anthropic(base64_image, page_number, backstory):
     """
-    Send the encoded image along with a prompt (and optional backstory)
-    to Claude via the Anthropic API and return the transcribed text.
+    Send the encoded image to Claude via the Anthropic API.
     """
     headers = {
         "Content-Type": "application/json",
-        "x-api-key": API_KEY,
+        "x-api-key": ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01"
     }
 
-    # Combine backstory (if provided) with the base prompt text
-    prompt_text = (backstory + "\n\n" if backstory else "") + PARAMETERS['prompt_text']
+    prompt_text = (backstory + "\n\n" if backstory else "") + PROMPT_TEXT
+    params = PARAMETERS["anthropic"]
 
-    # Anthropic's message format for vision
     payload = {
-        "model": PARAMETERS['model'],
-        "max_tokens": PARAMETERS['max_tokens'],
+        "model": params['model'],
+        "max_tokens": params['max_tokens'],
         "messages": [
             {
                 "role": "user",
@@ -342,31 +364,99 @@ def image_to_text(base64_image, page_number, backstory):
         ]
     }
 
+    response = requests.post(
+        "https://api.anthropic.com/v1/messages",
+        headers=headers,
+        json=payload,
+        timeout=120
+    )
+
+    if response.status_code == 200:
+        result = response.json()
+        content = result.get('content', [])
+        text_parts = [block['text'] for block in content if block.get('type') == 'text']
+        return '\n'.join(text_parts), None
+    else:
+        return None, response
+
+
+def image_to_text_openai(base64_image, page_number, backstory):
+    """
+    Send the encoded image to OpenAI's GPT-4 Vision API.
+    """
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {OPENAI_API_KEY}"
+    }
+
+    prompt_text = (backstory + "\n\n" if backstory else "") + PROMPT_TEXT
+    params = PARAMETERS["openai"]
+
+    payload = {
+        "model": params['model'],
+        "max_tokens": params['max_tokens'],
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{base64_image}"
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt_text
+                    }
+                ]
+            }
+        ]
+    }
+
+    response = requests.post(
+        "https://api.openai.com/v1/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=120
+    )
+
+    if response.status_code == 200:
+        result = response.json()
+        choices = result.get('choices', [])
+        if choices:
+            return choices[0]['message']['content'], None
+        return "", None
+    else:
+        return None, response
+
+
+def image_to_text(base64_image, page_number, backstory):
+    """
+    Send the encoded image along with a prompt (and optional backstory)
+    to the configured AI provider and return the transcribed text.
+    """
+    # Select the appropriate provider function
+    if AI_PROVIDER == "openai":
+        provider_func = image_to_text_openai
+    else:
+        provider_func = image_to_text_anthropic
+
     # Try up to 5 times to process the image
     for attempt in range(5):
-        logging.info(f"Processing page {page_number}: Attempt {attempt + 1}")
+        logging.info(f"Processing page {page_number}: Attempt {attempt + 1} ({AI_PROVIDER})")
         try:
-            response = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers=headers,
-                json=payload,
-                timeout=120
-            )
+            text, error_response = provider_func(base64_image, page_number, backstory)
 
-            if response.status_code == 200:
-                result = response.json()
-                # Extract text from Claude's response
-                content = result.get('content', [])
-                text_parts = [block['text'] for block in content if block.get('type') == 'text']
-                transcribed_text = '\n'.join(text_parts)
+            if text is not None:
                 logging.info(f"Page {page_number} processed successfully.")
-                return transcribed_text
+                return text
             else:
-                error_info = response.json() if response.text else {"error": response.status_code}
+                error_info = error_response.json() if error_response.text else {"error": error_response.status_code}
                 logging.error(f"Attempt {attempt + 1} failed for page {page_number}: {error_info}")
 
                 # If rate limited, wait before retry
-                if response.status_code == 429:
+                if error_response.status_code == 429:
                     import time
                     wait_time = min(2 ** attempt, 30)  # Exponential backoff, max 30s
                     logging.info(f"Rate limited. Waiting {wait_time}s before retry...")
@@ -416,7 +506,7 @@ def transcribe_pdf(pdf_path, backstory="", use_cache=True, force=False, gdrive_i
     except Exception as e:
         raise RuntimeError(f"Failed to convert PDF to images: {e}")
 
-    logging.info(f"Processing {len(images)} page(s) with {PARAMETERS['model']}...")
+    logging.info(f"Processing {len(images)} page(s) with {get_current_model()} ({AI_PROVIDER})...")
 
     # Process each page
     all_text = []
@@ -448,8 +538,10 @@ def transcribe_pdf(pdf_path, backstory="", use_cache=True, force=False, gdrive_i
 
 
 def main():
+    global AI_PROVIDER  # Allow overriding via CLI
+
     parser = argparse.ArgumentParser(
-        description="Process a scanned PDF file page by page with Claude and save the transcription results."
+        description="Process a scanned PDF file page by page with AI vision and save the transcription results."
     )
     parser.add_argument("pdf_file", nargs='?', help="Path to the scanned PDF file (or use --gdrive)")
     parser.add_argument(
@@ -463,8 +555,13 @@ def main():
         "-v", "--verbose", action="store_true", help="Enable verbose logging for debugging"
     )
     parser.add_argument(
-        "-m", "--model", help="Claude model to use (default: claude-sonnet-4-20250514)",
-        default="claude-sonnet-4-20250514"
+        "-m", "--model", help="Model to use (default depends on provider)",
+        default=None
+    )
+    parser.add_argument(
+        "--provider", choices=["anthropic", "openai"],
+        help="AI provider to use (default: anthropic, or AI_PROVIDER env var)",
+        default=None
     )
     parser.add_argument(
         "--no-cache", action="store_true",
@@ -490,20 +587,49 @@ def main():
         "--work-dir", default="/tmp/pdfscribe",
         help="Working directory for downloaded files (default: /tmp/pdfscribe)"
     )
+
+    # RAG (Retrieval-Augmented Generation) options
+    parser.add_argument(
+        "--ingest", action="store_true",
+        help="Ingest transcription into RAG system after transcribing"
+    )
+    parser.add_argument(
+        "--bucket", metavar="BUCKET_ID",
+        help="Context bucket ID for RAG ingestion (required with --ingest)"
+    )
+    parser.add_argument(
+        "--rag-force", action="store_true",
+        help="Force re-ingest even if document already indexed"
+    )
+
     args = parser.parse_args()
+
+    # Override provider if specified via CLI
+    if args.provider:
+        AI_PROVIDER = args.provider
 
     # Override model if specified
     if args.model:
-        PARAMETERS['model'] = args.model
+        PARAMETERS[AI_PROVIDER]['model'] = args.model
 
     # Configure logging level
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
 
-    if not API_KEY:
-        logging.error("ANTHROPIC_API_KEY environment variable is required.")
-        logging.error("Get your API key at: https://console.anthropic.com/")
-        logging.error("Then set it: export ANTHROPIC_API_KEY='your-key'")
-        return
+    # Validate API key for the selected provider
+    if AI_PROVIDER == "openai":
+        if not OPENAI_API_KEY:
+            logging.error("OPENAI_API_KEY environment variable is required when using OpenAI provider.")
+            logging.error("Get your API key at: https://platform.openai.com/api-keys")
+            logging.error("Then set it: export OPENAI_API_KEY='your-key'")
+            return
+    else:  # anthropic
+        if not ANTHROPIC_API_KEY:
+            logging.error("ANTHROPIC_API_KEY environment variable is required.")
+            logging.error("Get your API key at: https://console.anthropic.com/")
+            logging.error("Then set it: export ANTHROPIC_API_KEY='your-key'")
+            return
+
+    logging.info(f"Using AI provider: {AI_PROVIDER}")
 
     # Handle Google Drive source
     gdrive_service = None
@@ -593,6 +719,42 @@ def main():
                 print("✗ Failed to upload to Google Drive")
         elif not gdrive_folder_id:
             logging.error("No Google Drive folder specified. Use --gdrive-folder FOLDER_ID")
+
+    # RAG ingestion if requested
+    if args.ingest:
+        if not args.bucket:
+            logging.error("--bucket is required when using --ingest")
+            return
+
+        try:
+            from src.rag import ingest_document, compute_file_checksum as rag_checksum
+        except ImportError:
+            logging.error("RAG module not available. Install psycopg2: pip install psycopg2-binary")
+            return
+
+        try:
+            # Use the cached transcription content
+            file_checksum = rag_checksum(args.pdf_file) if os.path.exists(args.pdf_file) else None
+            source_name = os.path.basename(args.pdf_file)
+
+            result = ingest_document(
+                text=transcription,
+                bucket_id=args.bucket,
+                source_file=source_name,
+                file_checksum=file_checksum,
+                metadata={"transcribed_at": cache_path},
+                force=args.rag_force
+            )
+
+            if result["status"] == "success":
+                print(f"✓ Ingested into RAG: {result['chunk_count']} chunks, ~{result['total_tokens']} tokens")
+            elif result["status"] == "skipped":
+                print(f"○ Already indexed (use --rag-force to re-ingest)")
+            else:
+                print(f"✗ RAG ingestion failed: {result.get('reason', 'unknown')}")
+
+        except Exception as e:
+            logging.error(f"RAG ingestion failed: {e}")
 
 
 if __name__ == "__main__":
