@@ -1,0 +1,113 @@
+# **UX/UI Design Document**
+
+---
+
+## **1. Overview**
+
+This document outlines the **user experience (UX) and user interface (UI) design** for an AI-powered web application that transcribes scanned PDFs and generates static websites for review and verification. The primary user base includes **legal professionals, businesses, and researchers** who handle large volumes of scanned documents.
+
+The interface is designed for a **desktop-first** experience, ensuring efficiency, clarity, and ease of use.
+
+---
+
+## **2. Layout & Navigation**
+
+### **2.1 Dashboard-Centric UI**
+- **Left Sidebar Navigation:** Persistent navigation for quick access to key features.
+  - **Home**: Overview of recent activity.
+  - **Upload PDFs**: Drag-and-drop functionality for bulk uploads.
+  - **Transcriptions**: View and manage processed documents.
+  - **Billing & Subscription**: Access payment plans.
+  - **Account Settings**: User profile, security, and preferences.
+
+- **Main Workspace Area:**
+  - Central **document processing status feed** (like a task manager).
+  - Quick **access to recent files**.
+  - **Live progress tracking** when transcribing PDFs.
+
+- **Top Bar (Global Actions):**
+  - Search & filters for finding documents quickly.
+  - Notification panel for processing status updates.
+  - User profile dropdown with settings & logout.
+
+---
+
+## **3. Upload & Processing Experience**
+
+### **3.1 Bulk Upload with Drag & Drop**
+- Users can **drag and drop multiple PDFs** into a designated drop zone.
+- Visual progress indicators **(e.g., animated progress bars, checkmarks on completed uploads).**
+- **Automated processing queue** where users can see the status of each file.
+
+### **3.2 Live Processing Feedback**
+- Real-time updates as pages are processed.
+- Status labels: **Pending, In Progress, Completed, Error.**
+- Option to cancel a processing request mid-way.
+
+---
+
+## **4. Document Transcription & Review**
+
+### **4.1 Side-by-Side Viewer**
+- **Left Pane:** **Scanned image of the document.**
+- **Right Pane:** **AI-generated transcription in a structured, readable format.**
+- **Click-to-compare feature:** Clicking on text highlights the corresponding section in the scanned image.
+- **Confidence Scoring:**
+  - Low-confidence text is **highlighted in red**.
+  - High-confidence text appears normally.
+- **Inline Editing:** Users can correct transcription errors directly in the interface.
+
+### **4.2 Annotation & Collaboration (Future Feature)**
+- Users can leave comments or notes on specific sections.
+- Version history for tracking changes.
+
+---
+
+## **5. Temporary & Long-Term Hosting**
+
+### **5.1 Preview Mode**
+- Generated website preview opens in a **clean, dedicated browser tab**.
+- Interactive table of contents for multi-page documents.
+- Shareable **temporary link** with an expiry countdown.
+
+### **5.2 Hosting Options**
+- Users can choose to **download as ZIP or opt-in for long-term hosting**.
+- **Hosting Dashboard:** Lists all hosted documents with renewal & delete options.
+
+---
+
+## **6. Subscription & Monetization Integration**
+
+### **6.1 Pricing Page with Tier Comparison**
+- Different plans based on:
+  - **Number of PDFs per month.**
+  - **Hosting duration.**
+  - **Collaboration features (for teams).**
+
+### **6.2 Upgrade Prompts in Key Moments**
+- If a user exceeds **free-tier limits**, a modal suggests an upgrade.
+- **Limited-time discounts** to incentivize annual plans.
+
+---
+
+## **7. Accessibility & Dark Mode**
+
+### **7.1 High-Contrast Mode**
+- Better readability for users with visual impairments.
+- Customizable font sizes.
+
+### **7.2 Keyboard Shortcuts**
+- Navigation via keyboard for faster document review.
+
+### **7.3 Dark Mode Option**
+- Toggle between light and dark themes for comfortable reading.
+
+---
+
+## **8. Next Steps**
+- **Wireframing:** Create detailed wireframes for key screens.
+- **Prototyping:** Develop interactive prototypes for usability testing.
+- **User Testing:** Validate UX flow with potential users.
+- **Refinement:** Improve based on feedback and usability metrics.
+```
+
