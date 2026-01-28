@@ -63,7 +63,7 @@ PARAMETERS = {
         "temperature": 0.7
     },
     "openai": {
-        "model": "gpt-4o",  # gpt-4o has excellent vision capabilities
+        "model": "gpt-5-image-mini",  # Optimized for vision, faster and cheaper than gpt-4o
         "max_tokens": 4096,
         "temperature": 0.7
     }
@@ -529,7 +529,7 @@ def transcribe_pdf(pdf_path, backstory="", use_cache=True, force=False, gdrive_i
             pdf_path,
             original_name,
             len(images),
-            PARAMETERS['model'],
+            get_current_model(),
             checksum,
             gdrive_id
         )
