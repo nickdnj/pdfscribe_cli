@@ -63,7 +63,7 @@ PARAMETERS = {
         "temperature": 0.7
     },
     "openai": {
-        "model": "gpt-5-image-mini",  # Optimized for vision, faster and cheaper than gpt-4o
+        "model": "gpt-4.1-mini",  # Fast and cost-effective vision model
         "max_tokens": 4096,
         "temperature": 0.7
     }
