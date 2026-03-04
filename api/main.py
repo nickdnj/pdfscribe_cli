@@ -81,6 +81,8 @@ class IngestResponse(BaseModel):
     total_tokens: int = 0
     source_file: str = ""
     bucket_id: str = ""
+    checksum: str = ""
+    reason: str = ""
 
 
 class DeleteRequest(BaseModel):
@@ -144,6 +146,8 @@ async def ingest(req: IngestRequest, _: str = Depends(verify_api_key)):
             total_tokens=result.get("total_tokens", 0),
             source_file=result.get("source_file", req.source_file),
             bucket_id=result.get("bucket_id", req.bucket_id),
+            checksum=result.get("checksum", ""),
+            reason=result.get("reason", ""),
         )
     except Exception as e:
         logging.exception("Ingest failed")
@@ -173,6 +177,8 @@ async def ingest_file(
             total_tokens=result.get("total_tokens", 0),
             source_file=result.get("source_file", file.filename),
             bucket_id=result.get("bucket_id", bucket_id),
+            checksum=result.get("checksum", ""),
+            reason=result.get("reason", ""),
         )
     except Exception as e:
         logging.exception("File ingest failed")

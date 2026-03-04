@@ -3,14 +3,16 @@
 RAG (Retrieval-Augmented Generation) module for PDFScribe
 Provides document ingestion, embedding, and semantic search capabilities
 
-Supports two backends (switched via RAG_BACKEND env var):
+Supports three backends (switched via RAG_BACKEND env var):
 - "sqlite"   — Local SQLite + sqlite-vec (default, original)
 - "postgres" — Cloud PostgreSQL + pgvector
+- "api"      — Remote REST API (no local DB or OpenAI key needed)
 
 Requirements:
 - SQLite backend: sqlite-vec extension
 - Postgres backend: psycopg2-binary, pgvector-enabled Postgres
-- Both: OpenAI API key for embeddings (text-embedding-3-small)
+- API backend: RAG_API_URL + RAG_API_KEY env vars
+- SQLite/Postgres: OpenAI API key for embeddings (text-embedding-3-small)
 """
 
 import os
@@ -33,7 +35,11 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 EMBEDDING_DIMENSION = 1536  # text-embedding-3-small dimension
 
 # Backend selection
-RAG_BACKEND = os.getenv("RAG_BACKEND", "sqlite")  # "sqlite" or "postgres"
+RAG_BACKEND = os.getenv("RAG_BACKEND", "sqlite")  # "sqlite", "postgres", or "api"
+
+# API backend configuration
+RAG_API_URL = os.getenv("RAG_API_URL", "")
+RAG_API_KEY = os.getenv("RAG_API_KEY", "")
 
 # SQLite configuration
 DB_PATH = os.getenv("RAG_DB_PATH", os.path.join(os.path.expanduser("~"), ".wharfside", "rag.db"))
@@ -52,6 +58,72 @@ CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "120"))  # ~15% overlap
 
 def _is_postgres():
     return RAG_BACKEND == "postgres"
+
+
+def _is_api():
+    return RAG_BACKEND == "api"
+
+
+# ---------------------------------------------------------------------------
+# API backend helpers
+# ---------------------------------------------------------------------------
+
+_api_client = None
+
+
+def _get_api_client():
+    """Get or create a singleton RAGClient for the API backend."""
+    global _api_client
+    if _api_client is None:
+        from api.client import RAGClient
+        _api_client = RAGClient(url=RAG_API_URL, api_key=RAG_API_KEY)
+    return _api_client
+
+
+def _search_api(query, bucket_id, limit, similarity_threshold):
+    """API backend search — delegates to REST API."""
+    client = _get_api_client()
+    results = client.search(query, bucket_id=bucket_id, limit=limit, threshold=similarity_threshold)
+    return [
+        SearchResult(
+            chunk_text=r["chunk_text"],
+            source_file=r["source_file"],
+            bucket_id=r["bucket_id"],
+            page_number=r.get("page_number"),
+            chunk_index=r.get("chunk_index", 0),
+            similarity=r.get("similarity", 0.0),
+            metadata=r.get("metadata", {}),
+        )
+        for r in results
+    ]
+
+
+def _ingest_api(text, bucket_id, source_file, metadata, force):
+    """API backend ingest — delegates to REST API (server handles embedding + chunking)."""
+    client = _get_api_client()
+    return client.ingest(text=text, bucket_id=bucket_id, source_file=source_file,
+                         force=force, metadata=metadata)
+
+
+def _delete_api(bucket_id, source_file):
+    """API backend delete — delegates to REST API."""
+    client = _get_api_client()
+    result = client.delete(bucket_id, source_file)
+    return result.get("deleted", False)
+
+
+def _list_documents_api(bucket_id):
+    """API backend list documents — delegates to REST API."""
+    client = _get_api_client()
+    return client.documents(bucket_id=bucket_id)
+
+
+def _stats_api():
+    """API backend stats — delegates to REST API."""
+    client = _get_api_client()
+    stats = client.stats()
+    stats["backend"] = "api"
+    return stats
 
 
 @dataclass
@@ -378,6 +450,9 @@ def get_embeddings(texts: List[str]) -> List[List[float]]:
 
 def is_document_indexed(bucket_id: str, source_file: str, checksum: str) -> bool:
     """Check if a document with the given checksum is already indexed."""
+    if _is_api():
+        # Let the server decide during ingest via its own checksum logic
+        return False
     conn = get_db_connection()
     try:
         if _is_postgres():
@@ -419,6 +494,9 @@ def ingest_document(
     Returns:
         Dict with ingestion results (chunk_count, total_tokens, etc.)
     """
+    if _is_api():
+        return _ingest_api(text, bucket_id, source_file, metadata, force)
+
     if not file_checksum:
         file_checksum = compute_text_checksum(text)
 
@@ -578,6 +656,9 @@ def search_documents(
     Returns:
         List of SearchResult objects sorted by similarity (descending)
     """
+    if _is_api():
+        return _search_api(query, bucket_id, limit, similarity_threshold)
+
     query_embedding = get_embeddings([query])[0]
 
     conn = get_db_connection()
@@ -687,6 +768,8 @@ def _search_postgres(conn, query_embedding, bucket_id, limit, similarity_thresho
 
 def list_indexed_documents(bucket_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """List all indexed documents."""
+    if _is_api():
+        return _list_documents_api(bucket_id)
     conn = get_db_connection()
     try:
         if _is_postgres():
@@ -735,6 +818,8 @@ def list_indexed_documents(bucket_id: Optional[str] = None) -> List[Dict[str, An
 
 def delete_document(bucket_id: str, source_file: str) -> bool:
     """Delete a document and its embeddings from the index."""
+    if _is_api():
+        return _delete_api(bucket_id, source_file)
     conn = get_db_connection()
     try:
         if _is_postgres():
@@ -775,6 +860,8 @@ def delete_document(bucket_id: str, source_file: str) -> bool:
 
 def get_index_stats() -> Dict[str, Any]:
     """Get statistics about the RAG index."""
+    if _is_api():
+        return _stats_api()
     conn = get_db_connection()
     try:
         if _is_postgres():
@@ -822,7 +909,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     parser = argparse.ArgumentParser(description="RAG operations for PDFScribe")
-    parser.add_argument("--backend", choices=["sqlite", "postgres"],
+    parser.add_argument("--backend", choices=["sqlite", "postgres", "api"],
                         help="Override RAG_BACKEND env var")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
