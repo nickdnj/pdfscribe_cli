@@ -1,0 +1,51 @@
+# Cloud Run service configuration for RAG API
+# Deploy with:
+#   gcloud run deploy rag-api \
+#     --source=. \
+#     --project=pdfscribe-prod \
+#     --region=us-central1 \
+#     --add-cloudsql-instances=pdfscribe-prod:us-central1:pdfscribe-db \
+#     --set-env-vars="RAG_BACKEND=postgres,RAG_DB_HOST=/cloudsql/pdfscribe-prod:us-central1:pdfscribe-db,RAG_DB_USER=rag,RAG_DB_NAME=rag,RAG_DB_PORT=5432" \
+#     --set-secrets="RAG_DB_PASSWORD=rag-db-password:latest,RAG_API_KEYS=rag-api-keys:latest,OPENAI_API_KEY=openai-api-key:latest" \
+#     --allow-unauthenticated \
+#     --memory=512Mi \
+#     --cpu=1 \
+#     --min-instances=0 \
+#     --max-instances=3 \
+#     --timeout=60
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: rag-api
+  annotations:
+    run.googleapis.com/launch-stage: BETA
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "3"
+        run.googleapis.com/cloudsql-instances: pdfscribe-prod:us-central1:pdfscribe-db
+    spec:
+      containerConcurrency: 20
+      timeoutSeconds: 60
+      containers:
+        - image: gcr.io/pdfscribe-prod/rag-api
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              memory: 512Mi
+              cpu: "1"
+          env:
+            - name: RAG_BACKEND
+              value: postgres
+            - name: RAG_DB_HOST
+              value: /cloudsql/pdfscribe-prod:us-central1:pdfscribe-db
+            - name: RAG_DB_USER
+              value: rag
+            - name: RAG_DB_NAME
+              value: rag
+            - name: RAG_DB_PORT
+              value: "5432"
