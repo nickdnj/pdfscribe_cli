@@ -642,7 +642,7 @@ def search_documents(
     query: str,
     bucket_id: Optional[str] = None,
     limit: int = 10,
-    similarity_threshold: float = 0.5
+    similarity_threshold: float = 0.35
 ) -> List[SearchResult]:
     """
     Perform semantic search across indexed documents.
